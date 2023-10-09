@@ -3,6 +3,7 @@ import datetime
 import math
 import os
 import threading
+import zoneinfo
 import ib_insync
 import asyncio
 from polygon import RESTClient, WebSocketClient
@@ -15,6 +16,7 @@ config = configparser.ConfigParser()
 config.read("general_config.ini")
 base_amount = float(config["DEFAULT"]["base_amount"])
 
+TZ = zoneinfo.ZoneInfo("America/New_York")
 tickers = {}
 last = {}
 opens = {}
@@ -76,31 +78,45 @@ def work():
             if ticker not in last or ticker not in opens:
                 continue
             contract: ib_insync.Stock = contracts[ticker]
-            if (
-                (last[ticker] - opens[ticker]) / opens[ticker] <= tickers[ticker]["Trigger"]
-                and ticker not in trades
-                and datetime.datetime.now().time() < tickers[ticker]["close_time"]
+            if ticker in trades and trades[ticker].orderStatus.status in (
+                "Cancelled",
+                "ApiCancelled",
+                "Inactive",
+                "PendingCancel",
             ):
+                trades.pop(ticker)
+            if (last[ticker] - opens[ticker]) / opens[ticker] <= tickers[ticker][
+                "Trigger"
+            ] and ticker not in trades:
                 cd = ib.reqContractDetails(contract)[0]
                 increment = ib.reqMarketRule(int(cd.marketRuleIds.split(",")[0]))[0].increment
                 stop_price = opens[ticker] * (1 + tickers[ticker]["Send order"])
                 stop_price = int(stop_price / increment) * increment
                 quantity = math.floor(base_amount * tickers[ticker]["Percentage"] / stop_price)
                 trades[ticker]: ib_insync.Trade = ib.placeOrder(
-                    contract, ib_insync.StopOrder("BUY", quantity, stop_price)
+                    contract, ib_insync.LimitOrder("BUY", quantity, stop_price)
                 )
 
             if (
                 ticker in trades
-                and datetime.datetime.now().time() >= tickers[ticker]["close_time"]
+                and trades[ticker].orderStatus.status == "Filled"
+                and datetime.datetime.now(tz=TZ).time() >= tickers[ticker]["close_time"]
+                and datetime.datetime.now(tz=TZ).date()
+                != tickers[ticker].fills[-1].time.astimezone(TZ).date()
             ):
-                if trades[ticker].orderStatus.status == "Filled":
-                    ib.placeOrder(
-                        contract,
-                        ib_insync.MarketOrder("SELL", abs(trades[ticker].orderStatus.filled)),
-                    )
-                else:
-                    ib.cancelOrder(trades[ticker].order)
+                ib.placeOrder(
+                    contract,
+                    ib_insync.MarketOrder("SELL", abs(trades[ticker].orderStatus.filled)),
+                )
+                trades.pop(ticker)
+            if (
+                ticker in trades
+                and trades[ticker].orderStatus.status != "Filled"
+                and datetime.datetime.now(tz=TZ).time() >= tickers[ticker]["close_time"]
+                and datetime.datetime.now(tz=TZ).date()
+                != tickers[ticker].log[0].time.astimezone(TZ)
+            ):
+                ib.cancelOrder(trades[ticker].order)
                 trades.pop(ticker)
 
 
