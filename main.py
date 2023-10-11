@@ -102,7 +102,7 @@ def work():
                 and trades[ticker].orderStatus.status == "Filled"
                 and datetime.datetime.now(tz=TZ).time() >= tickers[ticker]["close_time"]
                 and datetime.datetime.now(tz=TZ).date()
-                != tickers[ticker].fills[-1].time.astimezone(TZ).date()
+                != trades[ticker].fills[-1].time.astimezone(TZ).date()
             ):
                 ib.placeOrder(
                     contract,
@@ -114,7 +114,7 @@ def work():
                 and trades[ticker].orderStatus.status != "Filled"
                 and datetime.datetime.now(tz=TZ).time() >= tickers[ticker]["close_time"]
                 and datetime.datetime.now(tz=TZ).date()
-                != tickers[ticker].log[0].time.astimezone(TZ)
+                != trades[ticker].log[0].time.astimezone(TZ).date()
             ):
                 ib.cancelOrder(trades[ticker].order)
                 trades.pop(ticker)
