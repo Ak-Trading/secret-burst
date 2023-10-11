@@ -69,7 +69,7 @@ def work():
     contracts = {ticker: get_contract(ticker) for ticker in tickers.keys()}
     ib.schedule(datetime.time(9, 30, 1), get_opens)
     while True:
-        if len(last) < 2:
+        if len(last) < len(tickers):
             continue
         ib.sleep(1)
         if not ib.isConnected():
