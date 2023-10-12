@@ -65,6 +65,7 @@ def work():
         if not ib.isConnected():
             try:
                 ib.connect(clientId=0)
+                print("connection restored")
             except:
                 pass
             ib.sleep(10)
