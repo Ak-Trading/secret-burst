@@ -60,7 +60,12 @@ def work():
     ib.connect(clientId=0)
     global contracts
     contracts = {ticker: get_contract(ticker) for ticker in tickers.keys()}
-    ib.schedule(datetime.time(9, 30, 1), get_opens)
+    now = datetime.datetime.now(TZ)
+    get_opens_time = datetime.datetime(
+        now.year, now.month, now.day, hour=9, minute=30, second=1, tzinfo=TZ
+    )
+    get_opens_time = get_opens_time.astimezone(datetime.datetime.now().astimezone().tzinfo).time()
+    ib.schedule(get_opens_time, get_opens)
     while True:
         if not ib.isConnected():
             try:

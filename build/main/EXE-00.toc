@@ -70,7 +70,7 @@
  [],
  False,
  False,
- 1697123003,
+ 1697126947,
  [('run.exe',
    'C:\\Users\\kyril\\.virtualenvs\\secret-burst-lIYptnYa\\lib\\site-packages\\PyInstaller\\bootloader\\Windows-64bit-intel\\run.exe',
    'EXECUTABLE')],
