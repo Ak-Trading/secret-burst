@@ -9,7 +9,9 @@ import asyncio
 from polygon import RESTClient, WebSocketClient
 import dotenv
 import configparser
+import nest_asyncio
 
+nest_asyncio.apply()
 dotenv.load_dotenv()
 
 config = configparser.ConfigParser()
@@ -46,78 +48,77 @@ def run_ib():
     loop.close()
 
 
-def work():
-    def on_disconnected(*args):
-        while ib.isConnected() is False:
-            print("trying to connect")
-            try:
-                ib.connect(clientId=0)
-            except:
-                ib.sleep(5)
-        ib.sleep(10)
-        print("connected")
+ib = ib_insync.IB()
 
+
+def work():
     def get_contract(ticker):
         contract = ib_insync.Stock(ticker, tickers[ticker]["Market"], "USD")
         ib.qualifyContracts(contract)
         return contract
 
-    ib = ib_insync.IB()
     ib.connect(clientId=0)
-    ib.disconnectedEvent += on_disconnected
     global contracts
     contracts = {ticker: get_contract(ticker) for ticker in tickers.keys()}
     ib.schedule(datetime.time(9, 30, 1), get_opens)
     while True:
-        if len(last) < len(tickers):
-            continue
-        ib.sleep(1)
         if not ib.isConnected():
+            try:
+                ib.connect(clientId=0)
+            except:
+                pass
+            ib.sleep(10)
             continue
-        for ticker in tickers.keys():
-            if ticker not in last or ticker not in opens:
+        try:
+            ib.sleep(1)
+            if len(last) < len(tickers):
                 continue
-            contract: ib_insync.Stock = contracts[ticker]
-            if ticker in trades and trades[ticker].orderStatus.status in (
-                "Cancelled",
-                "ApiCancelled",
-                "Inactive",
-                "PendingCancel",
-            ):
-                trades.pop(ticker)
-            if (last[ticker] - opens[ticker]) / opens[ticker] <= tickers[ticker][
-                "Trigger"
-            ] and ticker not in trades:
-                cd = ib.reqContractDetails(contract)[0]
-                increment = ib.reqMarketRule(int(cd.marketRuleIds.split(",")[0]))[0].increment
-                stop_price = opens[ticker] * (1 + tickers[ticker]["Send order"])
-                stop_price = int(stop_price / increment) * increment
-                quantity = math.floor(base_amount * tickers[ticker]["Percentage"] / stop_price)
-                trades[ticker]: ib_insync.Trade = ib.placeOrder(
-                    contract, ib_insync.LimitOrder("BUY", quantity, stop_price)
-                )
+            for ticker in tickers.keys():
+                if ticker not in last or ticker not in opens:
+                    continue
+                contract: ib_insync.Stock = contracts[ticker]
+                if ticker in trades and trades[ticker].orderStatus.status in (
+                    "Cancelled",
+                    "ApiCancelled",
+                    "Inactive",
+                    "PendingCancel",
+                ):
+                    trades.pop(ticker)
+                if (last[ticker] - opens[ticker]) / opens[ticker] <= tickers[ticker][
+                    "Trigger"
+                ] and ticker not in trades:
+                    cd = ib.reqContractDetails(contract)[0]
+                    increment = ib.reqMarketRule(int(cd.marketRuleIds.split(",")[0]))[0].increment
+                    stop_price = opens[ticker] * (1 + tickers[ticker]["Send order"])
+                    stop_price = int(stop_price / increment) * increment
+                    quantity = math.floor(base_amount * tickers[ticker]["Percentage"] / stop_price)
+                    trades[ticker]: ib_insync.Trade = ib.placeOrder(
+                        contract, ib_insync.LimitOrder("BUY", quantity, stop_price)
+                    )
 
-            if (
-                ticker in trades
-                and trades[ticker].orderStatus.status == "Filled"
-                and datetime.datetime.now(tz=TZ).time() >= tickers[ticker]["close_time"]
-                and datetime.datetime.now(tz=TZ).date()
-                != trades[ticker].fills[-1].time.astimezone(TZ).date()
-            ):
-                ib.placeOrder(
-                    contract,
-                    ib_insync.MarketOrder("SELL", abs(trades[ticker].orderStatus.filled)),
-                )
-                trades.pop(ticker)
-            if (
-                ticker in trades
-                and trades[ticker].orderStatus.status != "Filled"
-                and datetime.datetime.now(tz=TZ).time() >= tickers[ticker]["close_time"]
-                and datetime.datetime.now(tz=TZ).date()
-                != trades[ticker].log[0].time.astimezone(TZ).date()
-            ):
-                ib.cancelOrder(trades[ticker].order)
-                trades.pop(ticker)
+                if (
+                    ticker in trades
+                    and trades[ticker].orderStatus.status == "Filled"
+                    and datetime.datetime.now(tz=TZ).time() >= tickers[ticker]["close_time"]
+                    and datetime.datetime.now(tz=TZ).date()
+                    != trades[ticker].fills[-1].time.astimezone(TZ).date()
+                ):
+                    ib.placeOrder(
+                        contract,
+                        ib_insync.MarketOrder("SELL", abs(trades[ticker].orderStatus.filled)),
+                    )
+                    trades.pop(ticker)
+                if (
+                    ticker in trades
+                    and trades[ticker].orderStatus.status != "Filled"
+                    and datetime.datetime.now(tz=TZ).time() >= tickers[ticker]["close_time"]
+                    and datetime.datetime.now(tz=TZ).date()
+                    != trades[ticker].log[0].time.astimezone(TZ).date()
+                ):
+                    ib.cancelOrder(trades[ticker].order)
+                    trades.pop(ticker)
+        except:
+            pass
 
 
 if __name__ == "__main__":
