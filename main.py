@@ -3,9 +3,11 @@ import datetime
 import math
 import os
 import threading
+import time
 import zoneinfo
 import ib_insync
 import asyncio
+import logging
 from polygon import RESTClient, WebSocketClient
 import dotenv
 import configparser
@@ -22,6 +24,7 @@ TZ = zoneinfo.ZoneInfo("America/New_York")
 tickers = {}
 last = {}
 opens = {}
+open_date = {}
 trades = {}
 contracts = {}
 
@@ -34,10 +37,19 @@ def handle_msg(msgs):
 
 
 def get_opens():
-    for ticker in tickers.keys():
-        opens[ticker] = rest_client.get_daily_open_close_agg(
-            ticker, datetime.datetime.now().strftime("%Y-%m-%d")
-        ).open
+    while True:
+        for ticker in tickers.keys():
+            try:
+                if ticker not in opens or open_date[ticker] != datetime.datetime.now(TZ).strftime(
+                    "%Y-%m-%d"
+                ):
+                    opens[ticker] = rest_client.get_daily_open_close_agg(
+                        ticker, datetime.datetime.now(TZ).strftime("%Y-%m-%d")
+                    ).open
+                    open_date[ticker] = datetime.datetime.now(TZ).strftime("%Y-%m-%d")
+            except:
+                logging.warning(f"couldn't find open price for {ticker}! ignoring it.")
+        time.sleep(1)
 
 
 def run_ib():
@@ -54,18 +66,15 @@ ib = ib_insync.IB()
 def work():
     def get_contract(ticker):
         contract = ib_insync.Stock(ticker, tickers[ticker]["Market"], "USD")
-        ib.qualifyContracts(contract)
+        try:
+            ib.qualifyContracts(contract)
+        except:
+            return None
         return contract
 
     ib.connect(clientId=0)
     global contracts
     contracts = {ticker: get_contract(ticker) for ticker in tickers.keys()}
-    now = datetime.datetime.now(TZ)
-    get_opens_time = datetime.datetime(
-        now.year, now.month, now.day, hour=9, minute=30, second=1, tzinfo=TZ
-    )
-    get_opens_time = get_opens_time.astimezone(datetime.datetime.now().astimezone().tzinfo).time()
-    ib.schedule(get_opens_time, get_opens)
     while True:
         if not ib.isConnected():
             try:
@@ -77,17 +86,27 @@ def work():
             continue
         try:
             ib.sleep(1)
-            if len(last) < len(tickers):
-                continue
             for ticker in tickers.keys():
+                if ticker not in open_date or open_date[ticker] != datetime.datetime.now(
+                    TZ
+                ).strftime("%Y-%m-%d"):
+                    continue
                 if ticker not in last or ticker not in opens:
                     continue
                 contract: ib_insync.Stock = contracts[ticker]
-                if ticker in trades and trades[ticker].orderStatus.status in (
-                    "Cancelled",
-                    "ApiCancelled",
-                    "Inactive",
-                    "PendingCancel",
+                if contract is None:
+                    continue
+                if (
+                    ticker in trades
+                    and trades[ticker].orderStatus.status
+                    in (
+                        "Cancelled",
+                        "ApiCancelled",
+                        "Inactive",
+                        "PendingCancel",
+                    )
+                    and datetime.datetime.now(tz=TZ).date()
+                    != trades[ticker].log[0].time.astimezone(TZ).date()
                 ):
                     trades.pop(ticker)
                 if (last[ticker] - opens[ticker]) / opens[ticker] <= tickers[ticker][
@@ -142,6 +161,7 @@ if __name__ == "__main__":
         subscriptions=["T." + ticker for ticker in tickers.keys()],
     )
     threading.Thread(target=run_ib, daemon=True).start()
+    threading.Thread(target=get_opens, daemon=True).start()
     t2 = threading.Thread(target=client.run(handle_msg), daemon=True)
     t2.start()
     t2.join()
