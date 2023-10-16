@@ -48,6 +48,7 @@ def get_opens():
                     ).open
                     open_date[ticker] = datetime.datetime.now(TZ).strftime("%Y-%m-%d")
             except:
+                pass
                 logging.warning(f"couldn't find open price for {ticker}! ignoring it.")
         time.sleep(1)
 
