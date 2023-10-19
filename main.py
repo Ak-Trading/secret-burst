@@ -73,6 +73,26 @@ def work():
             return None
         return contract
 
+    def is_market_open(contract: ib_insync.Stock):
+        try:
+            details = ib.reqContractDetails(contract)
+            trading_hours = details[0].liquidHours
+            tz = details[0].timeZoneId
+            session = trading_hours.split(";")[0]
+            start, end = session.split("-")[:2]
+
+            start = datetime.datetime.strptime(start, "%Y%m%d:%H%M").replace(
+                tzinfo=zoneinfo.ZoneInfo(tz)
+            )
+            end = datetime.datetime.strptime(end, "%Y%m%d:%H%M").replace(
+                tzinfo=zoneinfo.ZoneInfo(tz)
+            )
+            now = datetime.datetime.now(zoneinfo.ZoneInfo(tz))
+
+            return start <= now <= end
+        except:
+            return False
+
     ib.connect(clientId=0)
     global contracts
     contracts = {ticker: get_contract(ticker) for ticker in tickers.keys()}
@@ -110,9 +130,11 @@ def work():
                     != trades[ticker].log[0].time.astimezone(TZ).date()
                 ):
                     trades.pop(ticker)
-                if (last[ticker] - opens[ticker]) / opens[ticker] <= tickers[ticker][
-                    "Trigger"
-                ] and ticker not in trades:
+                if (
+                    (last[ticker] - opens[ticker]) / opens[ticker] <= tickers[ticker]["Trigger"]
+                    and ticker not in trades
+                    and is_market_open(contract)
+                ):
                     cd = ib.reqContractDetails(contract)[0]
                     increment = ib.reqMarketRule(int(cd.marketRuleIds.split(",")[0]))[0].increment
                     stop_price = opens[ticker] * (1 + tickers[ticker]["Send order"])
@@ -127,7 +149,7 @@ def work():
                     and trades[ticker].orderStatus.status == "Filled"
                     and datetime.datetime.now(tz=TZ).time() >= tickers[ticker]["close_time"]
                     and datetime.datetime.now(tz=TZ).date()
-                    != trades[ticker].fills[-1].time.astimezone(TZ).date()
+                    != trades[ticker].fills[0].time.astimezone(TZ).date()
                 ):
                     ib.placeOrder(
                         contract,
@@ -155,7 +177,9 @@ if __name__ == "__main__":
             line["Trigger"] = float(line["Trigger"]) / 100
             line["Send order"] = float(line["Send order"]) / 100
             line["Percentage"] = float(line["Percentage"]) / 100
-            line["close_time"] = datetime.datetime.strptime(line["close_time"], "%H:%M").time()
+            line["close_time"] = (
+                datetime.datetime.strptime(line["close_time"], "%H:%M").time().replace(tzinfo=TZ)
+            )
             tickers[line["Stock"]] = line
     client = WebSocketClient(
         api_key=os.environ.get("POLYGON_API_KEY"),
