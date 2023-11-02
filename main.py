@@ -156,6 +156,7 @@ def work():
                     trade_time[trade.contract.symbol] = trade.log[0].time.astimezone(TZ).date()
                 elif trade.orderStatus.status == "Submitted":
                     entry_trades[trade.contract.symbol] = trade
+                    trade_time[trade.contract.symbol] = trade.log[0].time.astimezone(TZ).date()
 
     while True:
         if not ib.isConnected():
