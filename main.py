@@ -2,7 +2,6 @@ import csv
 import datetime
 import math
 import os
-from sys import exception
 import threading
 import time
 import zoneinfo
