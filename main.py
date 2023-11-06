@@ -2,6 +2,7 @@ import csv
 import datetime
 import math
 import os
+from sys import exception
 import threading
 import time
 import zoneinfo
@@ -231,19 +232,24 @@ def run_client():
 
 
 if __name__ == "__main__":
-    with open("config.csv", "r") as data:
-        for line in csv.DictReader(data):
-            line["Stock"] = line["Stock"].upper()
-            line["Market"] = line["Market"].upper()
-            line["Trigger"] = float(line["Trigger"]) / 100
-            line["Send order"] = float(line["Send order"]) / 100
-            line["Percentage"] = float(line["Percentage"]) / 100
-            line["close_time"] = (
-                datetime.datetime.strptime(line["close_time"], "%H:%M").time().replace(tzinfo=TZ)
-            )
-            line["stop loss"] = float(line["stop loss"]) / 100
-            tickers[line["Stock"]] = line
-    contracts = {ticker: get_contract(ticker) for ticker in tickers.keys()}
-    threading.Thread(target=get_opens, daemon=True).start()
-    threading.Thread(target=run_client, daemon=True).start()
-    work()
+    try:
+        with open("config.csv", "r") as data:
+            for line in csv.DictReader(data):
+                line["Stock"] = line["Stock"].upper()
+                line["Market"] = line["Market"].upper()
+                line["Trigger"] = float(line["Trigger"]) / 100
+                line["Send order"] = float(line["Send order"]) / 100
+                line["Percentage"] = float(line["Percentage"]) / 100
+                line["close_time"] = (
+                    datetime.datetime.strptime(line["close_time"], "%H:%M")
+                    .time()
+                    .replace(tzinfo=TZ)
+                )
+                line["stop loss"] = float(line["stop loss"]) / 100
+                tickers[line["Stock"]] = line
+        contracts = {ticker: get_contract(ticker) for ticker in tickers.keys()}
+        threading.Thread(target=get_opens, daemon=True).start()
+        threading.Thread(target=run_client, daemon=True).start()
+        work()
+    except Exception as e:
+        logging.error(e)
