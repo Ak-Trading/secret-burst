@@ -88,7 +88,7 @@ def handle_trade(trade: ib_insync.Trade, fill: ib_insync.Fill):
         )
         stop_loss_order[trade.contract.symbol] = ib.placeOrder(
             contracts[trade.contract.symbol],
-            ib_insync.StopOrder("SELL", fill.execution.cumQty, sl_price, orderRef="SL"),
+            ib_insync.StopOrder("SELL", fill.execution.cumQty, sl_price, orderRef="SL", tif="GTC"),
         ).order
     else:
         position[trade.contract.symbol] -= fill.execution.shares
@@ -180,7 +180,7 @@ def work():
                 if contract is None:
                     continue
                 if opens[ticker] == None:
-                    return
+                    continue
                 if (
                     (last[ticker] - opens[ticker]) / opens[ticker] <= tickers[ticker]["Trigger"]
                     and (ticker not in position or position[ticker] == 0)
