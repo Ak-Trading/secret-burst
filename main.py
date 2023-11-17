@@ -47,22 +47,16 @@ not_found = set()
 rest_client = RESTClient(api_key=os.environ.get("POLYGON_API_KEY"))
 
 
-def handle_msg(msgs):
-    for m in msgs:
-        last[m.symbol] = m.price
-
-
 def get_opens():
     while True:
         for ticker in tickers.keys():
             try:
-                if ticker not in opens or open_date[ticker] != datetime.datetime.now(TZ).strftime(
-                    "%Y-%m-%d"
-                ):
-                    opens[ticker] = rest_client.get_daily_open_close_agg(
-                        ticker, datetime.datetime.now(TZ).strftime("%Y-%m-%d")
-                    ).open
-                    open_date[ticker] = datetime.datetime.now(TZ).strftime("%Y-%m-%d")
+                bar = rest_client.get_daily_open_close_agg(
+                    ticker, datetime.datetime.now(TZ).strftime("%Y-%m-%d")
+                )
+                opens[ticker] = bar.open
+                last[ticker] = bar.low
+                open_date[ticker] = datetime.datetime.now(TZ).strftime("%Y-%m-%d")
             except:
                 if ticker not in not_found:
                     not_found.add(ticker)
@@ -222,14 +216,6 @@ def work():
             pass
 
 
-def run_client():
-    client = WebSocketClient(
-        api_key=os.environ.get("POLYGON_API_KEY"),
-        subscriptions=["T." + ticker for ticker in tickers.keys()],
-    )
-    client.run(handle_msg)
-
-
 if __name__ == "__main__":
     try:
         with open("config.csv", "r") as data:
@@ -248,7 +234,6 @@ if __name__ == "__main__":
                 tickers[line["Stock"]] = line
         contracts = {ticker: get_contract(ticker) for ticker in tickers.keys()}
         threading.Thread(target=get_opens, daemon=True).start()
-        threading.Thread(target=run_client, daemon=True).start()
         work()
     except Exception as e:
         logging.error(e)
