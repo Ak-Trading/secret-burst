@@ -18,7 +18,7 @@ dotenv.load_dotenv()
 
 logging.basicConfig(
     filename="logs.txt",
-    filemode="a",
+    filemode="w",
     format="%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s",
     datefmt="%H:%M:%S",
     level=logging.WARNING,
@@ -47,15 +47,18 @@ not_found = set()
 rest_client = RESTClient(api_key=os.environ.get("POLYGON_API_KEY"))
 
 
+def handle_msg(msgs):
+    for m in msgs:
+        last[m.symbol] = m.price
+
+
 def get_opens():
     while True:
         for ticker in tickers.keys():
             try:
-                bar = rest_client.get_daily_open_close_agg(
+                opens[ticker] = rest_client.get_daily_open_close_agg(
                     ticker, datetime.datetime.now(TZ).strftime("%Y-%m-%d")
-                )
-                opens[ticker] = bar.open
-                last[ticker] = bar.low
+                ).open
                 open_date[ticker] = datetime.datetime.now(TZ).strftime("%Y-%m-%d")
             except:
                 if ticker not in not_found:
@@ -90,7 +93,6 @@ def handle_trade(trade: ib_insync.Trade, fill: ib_insync.Fill):
             if trade.order.orderRef != "SL":
                 ib.cancelOrder(stop_loss_order[trade.contract.symbol])
             stop_loss_order.pop(trade.contract.symbol)
-            trade_time.pop(trade.contract.symbol)
 
 
 def get_contract(ticker):
@@ -148,7 +150,7 @@ def work():
             if trade.order.orderRef == "entry":
                 if trade.orderStatus.status == "Filled":
                     trade_time[trade.contract.symbol] = trade.log[0].time.astimezone(TZ).date()
-                elif trade.orderStatus.status == "Submitted":
+                elif trade.orderStatus.status in ib_insync.OrderStatus.ActiveStates:
                     entry_trades[trade.contract.symbol] = trade
                     trade_time[trade.contract.symbol] = trade.log[0].time.astimezone(TZ).date()
 
@@ -202,7 +204,6 @@ def work():
                         contract,
                         ib_insync.MarketOrder("SELL", position[ticker]),
                     )
-                    trade_time.pop(ticker)
                 if (
                     ticker in trade_time
                     and (ticker not in position or position[ticker] == 0)
@@ -211,29 +212,32 @@ def work():
                 ):
                     ib.cancelOrder(entry_trades[ticker].order)
                     entry_trades.pop(ticker)
-                    trade_time.pop(ticker)
         except:
             pass
 
 
+def run_client():
+    client = WebSocketClient(
+        api_key=os.environ.get("POLYGON_API_KEY"),
+        subscriptions=["T." + ticker for ticker in tickers.keys()],
+    )
+    client.run(handle_msg)
+
+
 if __name__ == "__main__":
-    try:
-        with open("config.csv", "r") as data:
-            for line in csv.DictReader(data):
-                line["Stock"] = line["Stock"].upper()
-                line["Market"] = line["Market"].upper()
-                line["Trigger"] = float(line["Trigger"]) / 100
-                line["Send order"] = float(line["Send order"]) / 100
-                line["Percentage"] = float(line["Percentage"]) / 100
-                line["close_time"] = (
-                    datetime.datetime.strptime(line["close_time"], "%H:%M")
-                    .time()
-                    .replace(tzinfo=TZ)
-                )
-                line["stop loss"] = float(line["stop loss"]) / 100
-                tickers[line["Stock"]] = line
-        contracts = {ticker: get_contract(ticker) for ticker in tickers.keys()}
-        threading.Thread(target=get_opens, daemon=True).start()
-        work()
-    except Exception as e:
-        logging.error(e)
+    with open("config.csv", "r") as data:
+        for line in csv.DictReader(data):
+            line["Stock"] = line["Stock"].upper()
+            line["Market"] = line["Market"].upper()
+            line["Trigger"] = float(line["Trigger"]) / 100
+            line["Send order"] = float(line["Send order"]) / 100
+            line["Percentage"] = float(line["Percentage"]) / 100
+            line["close_time"] = (
+                datetime.datetime.strptime(line["close_time"], "%H:%M").time().replace(tzinfo=TZ)
+            )
+            line["stop loss"] = float(line["stop loss"]) / 100
+            tickers[line["Stock"]] = line
+    contracts = {ticker: get_contract(ticker) for ticker in tickers.keys()}
+    threading.Thread(target=get_opens, daemon=True).start()
+    threading.Thread(target=run_client, daemon=True).start()
+    work()

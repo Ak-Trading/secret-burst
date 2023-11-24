@@ -1,5 +1,5 @@
 Stock,Send order,Trigger,Market,Percentage,close_time,stop loss
-AAPL,-3,-2,smart,150,15:55,1
+AAPL,-3,-0.87,smart,150,15:55,1
 MSFT,-3,-2,smart,150,15:55,1
 GOOG,-3,-2,smart,150,15:55,1
 GOOGL,-3,-2,smart,150,15:55,1
