@@ -200,6 +200,7 @@ def work():
                     and datetime.datetime.now(tz=TZ).time() >= tickers[ticker]["close_time"]
                     and datetime.datetime.now(tz=TZ).date() != trade_time[ticker]
                 ):
+                    trade_time[ticker] = datetime.datetime.now(tz=TZ).date()
                     ib.placeOrder(
                         contract,
                         ib_insync.MarketOrder("SELL", position[ticker]),
