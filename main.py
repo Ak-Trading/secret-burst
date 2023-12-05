@@ -163,8 +163,8 @@ def work():
                 pass
             ib.sleep(10)
             continue
-        ib.sleep(1)
         try:
+            ib.sleep(1)
             for ticker in tickers.keys():
                 if ticker not in open_date or open_date[ticker] != datetime.datetime.now(
                     TZ
