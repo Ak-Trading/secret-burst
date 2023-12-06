@@ -226,6 +226,8 @@ def run_client():
 
 
 if __name__ == "__main__":
+    while datetime.datetime.now(TZ).time() < datetime.time(9):
+        time.sleep(60)
     with open("config.csv", "r") as data:
         for line in csv.DictReader(data):
             line["Stock"] = line["Stock"].upper()
