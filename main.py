@@ -56,13 +56,10 @@ def get_opens():
     while True:
         for ticker in tickers.keys():
             try:
-                if ticker not in opens or open_date[ticker] != datetime.datetime.now(TZ).strftime(
-                    "%Y-%m-%d"
-                ):
-                    opens[ticker] = rest_client.get_daily_open_close_agg(
-                        ticker, datetime.datetime.now(TZ).strftime("%Y-%m-%d")
-                    ).open
-                    open_date[ticker] = datetime.datetime.now(TZ).strftime("%Y-%m-%d")
+                opens[ticker] = rest_client.get_daily_open_close_agg(
+                    ticker, datetime.datetime.now(TZ).strftime("%Y-%m-%d")
+                ).open
+                open_date[ticker] = datetime.datetime.now(TZ).strftime("%Y-%m-%d")
             except:
                 if ticker not in not_found:
                     not_found.add(ticker)
@@ -88,7 +85,7 @@ def handle_trade(trade: ib_insync.Trade, fill: ib_insync.Fill):
         )
         stop_loss_order[trade.contract.symbol] = ib.placeOrder(
             contracts[trade.contract.symbol],
-            ib_insync.StopOrder("SELL", fill.execution.cumQty, sl_price, orderRef="SL"),
+            ib_insync.StopOrder("SELL", fill.execution.cumQty, sl_price, orderRef="SL", tif="GTC"),
         ).order
     else:
         position[trade.contract.symbol] -= fill.execution.shares
@@ -96,7 +93,6 @@ def handle_trade(trade: ib_insync.Trade, fill: ib_insync.Fill):
             if trade.order.orderRef != "SL":
                 ib.cancelOrder(stop_loss_order[trade.contract.symbol])
             stop_loss_order.pop(trade.contract.symbol)
-            trade_time.pop(trade.contract.symbol)
 
 
 def get_contract(ticker):
@@ -154,8 +150,9 @@ def work():
             if trade.order.orderRef == "entry":
                 if trade.orderStatus.status == "Filled":
                     trade_time[trade.contract.symbol] = trade.log[0].time.astimezone(TZ).date()
-                elif trade.orderStatus.status == "Submitted":
+                elif trade.orderStatus.status in ib_insync.OrderStatus.ActiveStates:
                     entry_trades[trade.contract.symbol] = trade
+                    trade_time[trade.contract.symbol] = trade.log[0].time.astimezone(TZ).date()
 
     while True:
         if not ib.isConnected():
@@ -166,8 +163,8 @@ def work():
                 pass
             ib.sleep(10)
             continue
-        ib.sleep(1)
         try:
+            ib.sleep(1)
             for ticker in tickers.keys():
                 if ticker not in open_date or open_date[ticker] != datetime.datetime.now(
                     TZ
@@ -179,7 +176,7 @@ def work():
                 if contract is None:
                     continue
                 if opens[ticker] == None:
-                    return
+                    continue
                 if (
                     (last[ticker] - opens[ticker]) / opens[ticker] <= tickers[ticker]["Trigger"]
                     and (ticker not in position or position[ticker] == 0)
@@ -203,11 +200,11 @@ def work():
                     and datetime.datetime.now(tz=TZ).time() >= tickers[ticker]["close_time"]
                     and datetime.datetime.now(tz=TZ).date() != trade_time[ticker]
                 ):
+                    trade_time[ticker] = datetime.datetime.now(tz=TZ).date()
                     ib.placeOrder(
                         contract,
                         ib_insync.MarketOrder("SELL", position[ticker]),
                     )
-                    trade_time.pop(ticker)
                 if (
                     ticker in trade_time
                     and (ticker not in position or position[ticker] == 0)
@@ -216,7 +213,6 @@ def work():
                 ):
                     ib.cancelOrder(entry_trades[ticker].order)
                     entry_trades.pop(ticker)
-                    trade_time.pop(ticker)
         except:
             pass
 
@@ -230,6 +226,8 @@ def run_client():
 
 
 if __name__ == "__main__":
+    while datetime.datetime.now(TZ).time() < datetime.time(9):
+        time.sleep(60)
     with open("config.csv", "r") as data:
         for line in csv.DictReader(data):
             line["Stock"] = line["Stock"].upper()
